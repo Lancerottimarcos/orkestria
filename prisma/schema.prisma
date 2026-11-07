@@ -1,0 +1,1715 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+enum ClientStatus {
+  ACTIVE
+  PAUSED
+  CHURNED
+}
+
+enum ProjectStatus {
+  PLANNING
+  IN_PROGRESS
+  REVIEW
+  DONE
+  CANCELED
+}
+
+enum TeamMemberType {
+  EMPLOYEE
+  PARTNER
+}
+
+enum PaymentType {
+  FIXED_MONTHLY
+  PER_PROJECT
+  HOURLY
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELED
+}
+
+enum TransactionSource {
+  MANUAL
+  RECURRING
+  CONTRACT
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum SocialNetwork {
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+  YOUTUBE
+  LINKEDIN
+  THREADS
+}
+
+enum SocialAccountStatus {
+  ACTIVE
+  EXPIRED
+  ERROR
+}
+
+enum PublishStatus {
+  PENDING
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+enum FolderKind {
+  NOTE
+  CHECKLIST
+}
+
+enum PostStatus {
+  PENDING
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+}
+
+enum AttachmentType {
+  IMAGE
+  VIDEO
+  FILE
+}
+
+enum ImportPlatform {
+  TRELLO
+  CLICKUP
+  NOTION
+  ASANA
+}
+
+enum ImportJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum AutomationTrigger {
+  ENTER_COLUMN
+  TYPE_CHANGED_TO
+  /// Card parado na mesma coluna por N dias (triggerThresholdDays) sem mover.
+  CARD_IDLE
+  /// Prazo do card a N dias ou menos de vencer (triggerThresholdDays).
+  DUE_DATE_APPROACHING
+}
+
+enum AutomationAction {
+  ASSIGN_MEMBER
+  MARK_DUE_DATE_DONE
+  ADD_COMMENT
+  ADD_CHECKLIST
+  SET_DEMAND_TYPE
+  MOVE_TO_COLUMN
+  SET_URGENT
+  CLEAR_URGENT
+  SORT_BY_DUE_DATE
+  PROMPT_SCHEDULE
+  /// Gera um rascunho de legenda com IA usando persona/tom de voz do cliente e posta como comentário automático.
+  AI_DRAFT_CAPTION
+}
+
+enum ExpenseCategory {
+  MIDIA_PAGA
+  FERRAMENTAS
+  FOLHA
+  IMPOSTOS
+  ALUGUEL
+  MARKETING
+  OUTROS
+}
+
+enum WhatsAppMessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum ChatChannelKind {
+  SECTOR
+  GROUP
+  CLIENT
+  DM
+}
+
+model User {
+  id                       String    @id @default(cuid())
+  name                     String
+  email                    String    @unique
+  passwordHash             String
+  role                     Role      @default(MEMBER)
+  setor                    String?
+  cargo                    String?
+  active                   Boolean   @default(true)
+  moduleAccess             String?
+  /// JSON array de Client.id que essa pessoa pode ver - null (o padrão) significa "vê todos", mesma semântica de moduleAccess.
+  clientAccess             String?
+  avatarUrl                String?
+  passwordResetRequestedAt DateTime?
+  lastLoginAt              DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  assignedCards            KanbanCard[]
+  notes                    Note[]
+  comments                 Comment[]             @relation("CommentAuthor")
+  commentMentions          Comment[]             @relation("CommentMention")
+  automationAssignments    ColumnAutomation[]    @relation("AutomationAssignee")
+  automationMentions       ColumnAutomation[]    @relation("AutomationMention")
+  chatChannelMemberships   ChatChannelMember[]
+  chatMessages             ChatMessage[]         @relation("ChatMessageAuthor")
+  chatMentions             ChatMessage[]         @relation("ChatMessageMention")
+  salesOpportunities       SalesOpportunity[]
+  salesProposals           SalesProposal[]
+  customForms              CustomForm[]
+  shortLinks               ShortLink[]
+  connectedSocialAccounts  SocialAccount[]
+  metaAppConfigUpdates     MetaAppConfig[]
+  tikTokAppConfigUpdates   TikTokAppConfig[]
+  youTubeAppConfigUpdates  YouTubeAppConfig[]
+  linkedInAppConfigUpdates LinkedInAppConfig[]
+  threadsAppConfigUpdates  ThreadsAppConfig[]
+  importJobs               ImportJob[]
+  postsSent                Post[]
+  timeEntries              TimeEntry[]
+  credentialReveals        CredentialRevealLog[]
+  activityLogs             ActivityLog[]
+  aiConfigUpdates          AiConfig[]
+  emailConfigUpdates       EmailConfig[]
+  paymentConfigUpdates     PaymentConfig[]
+  whatsAppConfigUpdates    WhatsAppConfig[]
+  whatsAppMessagesSent     WhatsAppMessage[]
+}
+
+model ChatChannel {
+  id        String          @id @default(cuid())
+  name      String
+  kind      ChatChannelKind @default(GROUP)
+  sector    String?
+  avatarUrl String?
+  color     String?
+  createdAt DateTime        @default(now())
+
+  clientId String? @unique
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  members  ChatChannelMember[]
+  messages ChatMessage[]
+}
+
+model ChatChannelMember {
+  id         String    @id @default(cuid())
+  createdAt  DateTime  @default(now())
+  pinned     Boolean   @default(false)
+  lastReadAt DateTime?
+
+  channel   ChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  channelId String
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@unique([channelId, userId])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  text      String
+  createdAt DateTime @default(now())
+
+  channel   ChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  channelId String
+
+  authorUser   User?   @relation("ChatMessageAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
+  authorUserId String?
+
+  authorClient   Client? @relation(fields: [authorClientId], references: [id], onDelete: SetNull)
+  authorClientId String?
+
+  mentionedUser   User?   @relation("ChatMessageMention", fields: [mentionedUserId], references: [id], onDelete: SetNull)
+  mentionedUserId String?
+
+  replyTo   ChatMessage?  @relation("ChatMessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replyToId String?
+  replies   ChatMessage[] @relation("ChatMessageReply")
+
+  @@index([channelId, createdAt])
+}
+
+model Client {
+  id                       String       @id @default(cuid())
+  name                     String
+  contactName              String?
+  email                    String?
+  phone                    String?
+  document                 String?
+  address                  String?
+  monthlyValue             Float        @default(0)
+  billingDay               Int          @default(5)
+  status                   ClientStatus @default(ACTIVE)
+  startDate                DateTime     @default(now())
+  notes                    String?
+  avatarUrl                String?
+  coverUrl                 String?
+  coverColor               String?
+  icon                     String?
+  portalEnabled            Boolean      @default(false)
+  portalEmail              String?      @unique
+  portalPasswordHash       String?
+  portalSlug               String?      @unique
+  passwordResetRequestedAt DateTime?
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
+
+  projects     Project[]
+  transactions Transaction[]
+  kanbanCards  KanbanCard[]
+  linkedNotes  Note[]
+  checklists   Checklist[]
+  posts        Post[]
+  kanbanBoards KanbanBoard[]
+  chatChannel  ChatChannel?
+  chatMessages ChatMessage[]
+  portalUsers  ClientPortalUser[]
+
+  persona          Persona?
+  profileDiagnosis ProfileDiagnosis?
+  competitors      Competitor[]
+  positioning      Positioning?
+  keyVisual        KeyVisual?
+  moodboard        Moodboard?
+
+  proposals             SalesProposal[]
+  forms                 CustomForm[]
+  socialAccounts        SocialAccount[]
+  importJobs            ImportJob[]
+  contractedServices    ContractedService[]
+  credentials           ClientCredential[]
+  whatsAppConversations WhatsAppConversation[]
+}
+
+/// Cofre de senhas do cliente (credenciais de acesso a ferramentas/contas) -
+/// valor guardado sempre criptografado (encryptSecret/decryptSecret, mesmo
+/// padrão já usado pros tokens da Meta). Acesso controlado pelo módulo
+/// "senhas" (src/lib/modules.ts), não por ACL individual por credencial.
+model ClientCredential {
+  id        String   @id @default(cuid())
+  label     String
+  username  String?
+  secretEnc String
+  url       String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client   Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId String
+  reveals  CredentialRevealLog[]
+
+  @@index([clientId])
+}
+
+/// Registro de quem revelou a senha em texto puro de uma credencial, e quando -
+/// a revelação em si não tem limite de tentativas, então isso é o mínimo de rastro.
+model CredentialRevealLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  credential   ClientCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  credentialId String
+  user         User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId       String?
+
+  @@index([credentialId])
+}
+
+/// Trilha de auditoria geral - quem mudou o quê, quando. Registrado nas ações
+/// de maior impacto (cliente, contrato, financeiro), não em todo clique do sistema.
+model ActivityLog {
+  id         String   @id @default(cuid())
+  action     String
+  entityType String
+  entityId   String?
+  summary    String
+  createdAt  DateTime @default(now())
+
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId String?
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+/// Pessoa adicional com acesso ao Portal do Cliente (além do login principal
+/// do próprio Client) - mesmo painel, exceto a aba Serviços, exclusiva do
+/// login principal (tem valores/contrato, nem toda pessoa do cliente precisa ver).
+model ClientPortalUser {
+  id           String    @id @default(cuid())
+  name         String
+  role         String?
+  email        String    @unique
+  passwordHash String
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  lastLoginAt  DateTime?
+
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId String
+
+  @@index([clientId])
+}
+
+enum ServicePeriod {
+  MONTHLY
+  QUARTERLY
+  SEMIANNUAL
+  ANNUAL
+  ONE_TIME
+}
+
+/// Serviço contratado por um cliente (valor, período, vigência e escopo) -
+/// mostrado pra ele no Portal do Cliente, em "Serviços Contratados". Não tem
+/// relação com o catálogo de Service usado em Projeto/Financeiro - é o
+/// registro do que foi efetivamente contratado, com seu próprio valor/escopo,
+/// que pode divergir do preço padrão do catálogo.
+model ContractedService {
+  id                    String        @id @default(cuid())
+  name                  String
+  scope                 String?
+  value                 Float         @default(0)
+  period                ServicePeriod @default(MONTHLY)
+  startDate             DateTime
+  renewalDate           DateTime?
+  contractUrl           String?
+  contractName          String?
+  // Snapshot do corpo do contrato (TipTap) + variáveis já resolvidas no
+  // momento da geração - permite mostrar o contrato inteiro na tela (não só
+  // o link do PDF) sem depender do ContractTemplate/dados do cliente ainda
+  // existirem/estarem inalterados depois.
+  contractBodyJson      String?
+  contractVariablesJson String?
+  signedAt              DateTime?
+  signerName            String?
+  signerDocument        String?
+  // Estilo de fonte escolhido pelo cliente pra assinatura digital (chave do
+  // catálogo SIGNATURE_FONTS) - preserva o visual da assinatura como foi feita.
+  signerFont            String?
+  // Contra-assinatura interna da agência - o cliente assina primeiro
+  // (campos acima), depois a agência confirma por dentro do sistema
+  // (nada de e-mail; aparece como pendência pra quem administra).
+  agencySignedAt        DateTime?
+  agencySignerName      String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId String
+
+  proposal   SalesProposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+  proposalId String?
+
+  transactions Transaction[]
+
+  @@index([clientId])
+  @@index([proposalId])
+}
+
+model Persona {
+  id             String   @id @default(cuid())
+  photoUrl       String?
+  name           String?
+  age            String?
+  location       String?
+  occupation     String?
+  incomeLevel    String?
+  painPoints     String?
+  desires        String?
+  goals          String?
+  objections     String?
+  buyingTriggers String?
+  notes          String?
+  updatedAt      DateTime @updatedAt
+
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId String @unique
+}
+
+model ProfileDiagnosis {
+  id               String   @id @default(cuid())
+  instagramHandle  String?
+  audience         String?
+  positioning      String?
+  contentPillars   String?
+  strengths        String?
+  weaknesses       String?
+  avgLikes         Int?
+  avgComments      Int?
+  avgShares        Int?
+  storyInteraction String?
+  rating           String?
+  recommendations  String?
+  updatedAt        DateTime @updatedAt
+
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId String @unique
+}
+
+model PositioningImage {
+  id       String @id @default(cuid())
+  url      String
+  position Int    @default(0)
+
+  positioning   Positioning @relation(fields: [positioningId], references: [id], onDelete: Cascade)
+  positioningId String
+
+  @@index([positioningId])
+}
+
+model KeyVisual {
+  id            String   @id @default(cuid())
+  logoUrl       String?
+  colors        String?
+  primaryFont   String?
+  secondaryFont String?
+  layoutNotes   String?
+  guidelines    String?
+  doNotes       String?
+  dontNotes     String?
+  updatedAt     DateTime @updatedAt
+
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId String @unique
+
+  images KeyVisualImage[]
+}
+
+model KeyVisualImage {
+  id       String @id @default(cuid())
+  url      String
+  category String @default("reference")
+  position Int    @default(0)
+
+  keyVisual   KeyVisual @relation(fields: [keyVisualId], references: [id], onDelete: Cascade)
+  keyVisualId String
+
+  @@index([keyVisualId])
+}
+
+model Moodboard {
+  id          String   @id @default(cuid())
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId String @unique
+
+  images MoodboardImage[]
+}
+
+model MoodboardImage {
+  id       String @id @default(cuid())
+  url      String
+  position Int    @default(0)
+
+  moodboard   Moodboard @relation(fields: [moodboardId], references: [id], onDelete: Cascade)
+  moodboardId String
+
+  @@index([moodboardId])
+}
+
+model Competitor {
+  id            String   @id @default(cuid())
+  name          String
+  handle        String?
+  avatarUrl     String?
+  followers     String?
+  frequency     String?
+  type          String?
+  sells         String?
+  differential  String?
+  niche         String?
+  strengths     String?
+  weaknesses    String?
+  opportunities String?
+  position      Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId String
+
+  @@index([clientId])
+}
+
+model Positioning {
+  id                 String   @id @default(cuid())
+  photoUrl           String?
+  niche              String?
+  archetypePrimary   String?
+  archetypeSecondary String?
+  essence            String?
+  personalityTraits  String?
+  communicationStyle String?
+  toneOfVoice        String?
+  toneExample        String?
+  colorPalette       String?
+  typography         String?
+  visualStyle        String?
+  updatedAt          DateTime @updatedAt
+
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId String @unique
+
+  images PositioningImage[]
+}
+
+model Service {
+  id           String   @id @default(cuid())
+  name         String
+  description  String?
+  defaultPrice Float    @default(0)
+  category     String?
+  coverColor   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  projects     Project[]
+  transactions Transaction[]
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  status      ProjectStatus @default(PLANNING)
+  value       Float?
+  startDate   DateTime?
+  dueDate     DateTime?
+  coverColor  String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId String
+
+  service   Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  serviceId String?
+
+  squad   Squad?  @relation(fields: [squadId], references: [id], onDelete: SetNull)
+  squadId String?
+
+  kanbanCards KanbanCard[]
+  notes       Note[]
+  checklists  Checklist[]
+  posts       Post[]
+
+  @@index([squadId])
+}
+
+model TeamMember {
+  id           String         @id @default(cuid())
+  name         String
+  type         TeamMemberType @default(EMPLOYEE)
+  role         String?
+  /// Único (quando preenchido) - clientMargin.ts casa User↔TeamMember por
+  /// e-mail; dois cadastros com o mesmo e-mail faziam o valor/hora do
+  /// último sobrescrever o do primeiro silenciosamente no Map de matching.
+  email        String?        @unique
+  phone        String?
+  paymentType  PaymentType    @default(FIXED_MONTHLY)
+  monthlyValue Float?
+  active       Boolean        @default(true)
+  avatarUrl    String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  transactions     Transaction[]
+  squadMemberships SquadMember[]
+  leadOfSquads     Squad[]       @relation("SquadLead")
+}
+
+model Squad {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  avatarUrl   String?
+  color       String?
+  icon        String?
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  lead   TeamMember? @relation("SquadLead", fields: [leadId], references: [id], onDelete: SetNull)
+  leadId String?
+
+  members  SquadMember[]
+  projects Project[]
+
+  @@index([leadId])
+}
+
+model SquadMember {
+  id      String @id @default(cuid())
+  squad   Squad  @relation(fields: [squadId], references: [id], onDelete: Cascade)
+  squadId String
+
+  teamMember   TeamMember @relation(fields: [teamMemberId], references: [id], onDelete: Cascade)
+  teamMemberId String
+
+  @@unique([squadId, teamMemberId])
+  @@index([teamMemberId])
+}
+
+model SalesStage {
+  id        String   @id @default(cuid())
+  name      String
+  color     String?
+  position  Int      @default(0)
+  isWon     Boolean  @default(false)
+  isLost    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  opportunities SalesOpportunity[]
+}
+
+model SalesOpportunity {
+  id                String    @id @default(cuid())
+  name              String
+  contactName       String?
+  email             String?
+  phone             String?
+  document          String?
+  address           String?
+  monthlyValue      Float?
+  setupValue        Float?
+  source            String?
+  notes             String?
+  expectedCloseDate DateTime?
+  closedAt          DateTime?
+  lostReason        String?
+  position          Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  stage   SalesStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  stageId String
+
+  responsible   User?   @relation(fields: [responsibleId], references: [id], onDelete: SetNull)
+  responsibleId String?
+
+  proposals SalesProposal[]
+
+  @@index([stageId])
+  @@index([responsibleId])
+}
+
+model SalesGoal {
+  id        String   @id @default(cuid())
+  year      Int
+  month     Int
+  target    Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([year, month])
+}
+
+enum ProposalStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  CHANGES_REQUESTED
+}
+
+enum ProposalPaymentCondition {
+  CASH
+  INSTALLMENTS
+}
+
+/// Duas gramaturas de documento comercial sobre a mesma base: QUICK
+/// ("Orçamento") mantém o fluxo enxuto de sempre; FULL ("Proposta comercial")
+/// ganha o corpo narrativo rico via ProposalTemplate (ver signProposalContracts
+/// e ProposalPublicView - nenhum dos dois muda de comportamento por causa
+/// disso, só o que é exibido no link público muda).
+enum ProposalKind {
+  QUICK
+  FULL
+}
+
+model SalesProposal {
+  id            String         @id @default(cuid())
+  title         String
+  status        ProposalStatus @default(DRAFT)
+  kind          ProposalKind   @default(FULL)
+  contactName   String?
+  notes         String?
+  validUntil    DateTime?
+  coverImageUrl String?
+  token         String         @unique @default(cuid())
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  acceptedAt           DateTime?
+  signerName           String?
+  changeRequestedAt    DateTime?
+  changeRequestMessage String?
+
+  paymentCondition ProposalPaymentCondition @default(CASH)
+  installmentCount Int?
+  setupFee         Float?
+  paymentMethods   String?
+
+  // Snapshot do corpo do ProposalTemplate escolhido (TipTap) + variáveis já
+  // resolvidas no momento do envio - mesmo padrão de
+  // ContractedService.contractBodyJson/contractVariablesJson: edição
+  // posterior no template nunca muda retroativamente uma proposta já enviada.
+  proposalBodyJson      String?
+  proposalVariablesJson String?
+
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientId String?
+
+  opportunity   SalesOpportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  opportunityId String?
+
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+
+  proposalTemplate   ProposalTemplate? @relation(fields: [proposalTemplateId], references: [id], onDelete: SetNull)
+  proposalTemplateId String?
+
+  items              SalesProposalItem[]
+  installments       SalesProposalInstallment[]
+  contractedServices ContractedService[]
+  views              ProposalView[]
+
+  @@index([clientId])
+  @@index([opportunityId])
+  @@index([proposalTemplateId])
+}
+
+/// Heatmap simples de visualização da proposta pública - contagem de
+/// aberturas, tempo na página e profundidade de rolagem, não por seção.
+model ProposalView {
+  id               String   @id @default(cuid())
+  viewedAt         DateTime @default(now())
+  durationSeconds  Int?
+  maxScrollPercent Int?
+
+  proposal   SalesProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  proposalId String
+
+  @@index([proposalId])
+}
+
+model SalesProposalItem {
+  id          String        @id @default(cuid())
+  description String
+  // Detalhamento completo do serviço (o que está incluso, entregáveis,
+  // condições) - vira ContractedService.scope no aceite, e por sua vez a
+  // variável {{servico.escopo}} do contrato.
+  scope       String?
+  quantity    Int           @default(1)
+  unitValue   Float         @default(0)
+  position    Int           @default(0)
+  billingType ServicePeriod @default(MONTHLY)
+
+  proposal   SalesProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  proposalId String
+
+  @@index([proposalId])
+}
+
+/// Cronograma de parcelas de uma proposta (definido em "Condições de
+/// pagamento" antes do envio) - vira as Transaction reais no momento da
+/// assinatura do contrato (ver signProposalContracts em pipeline.ts).
+model SalesProposalInstallment {
+  id       String   @id @default(cuid())
+  position Int      @default(0)
+  dueDate  DateTime
+  value    Float
+
+  proposal   SalesProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  proposalId String
+
+  @@index([proposalId])
+}
+
+enum CustomFormFieldType {
+  TEXT
+  TEXTAREA
+  SELECT
+  RADIO
+  CHECKBOX
+  DATE
+  RATING
+}
+
+model CustomForm {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  active        Boolean  @default(true)
+  token         String   @unique @default(cuid())
+  /// Marca o formulário de NPS gerado automaticamente por cliente, pra achá-lo sem depender do título.
+  isNpsTemplate Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientId String?
+
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+
+  fields      CustomFormField[]
+  submissions CustomFormSubmission[]
+
+  @@index([clientId])
+}
+
+model CustomFormField {
+  id       String              @id @default(cuid())
+  label    String
+  type     CustomFormFieldType @default(TEXT)
+  required Boolean             @default(false)
+  options  String?
+  position Int                 @default(0)
+
+  form   CustomForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formId String
+
+  responses CustomFormFieldResponse[]
+
+  @@index([formId])
+}
+
+model CustomFormSubmission {
+  id              String   @id @default(cuid())
+  respondentName  String?
+  respondentEmail String?
+  createdAt       DateTime @default(now())
+
+  form   CustomForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formId String
+
+  responses CustomFormFieldResponse[]
+
+  @@index([formId])
+}
+
+model CustomFormFieldResponse {
+  id    String @id @default(cuid())
+  value String
+
+  field   CustomFormField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  fieldId String
+
+  submission   CustomFormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  submissionId String
+
+  @@index([fieldId])
+  @@index([submissionId])
+}
+
+model ShortLink {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  targetUrl String
+  clicks    Int      @default(0)
+  createdAt DateTime @default(now())
+
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+}
+
+model Transaction {
+  id               String            @id @default(cuid())
+  type             TransactionType
+  amount           Float
+  description      String
+  dueDate          DateTime
+  paidDate         DateTime?
+  status           TransactionStatus @default(PENDING)
+  source           TransactionSource @default(MANUAL)
+  recurrenceKey    String?           @unique
+  /// Só usada em despesas (EXPENSE) - receita não é categorizada por aqui.
+  category         ExpenseCategory?
+  /// Cobrança gerada no gateway de pagamento configurado (PIX/boleto) - null enquanto não emitida.
+  externalChargeId String?
+  paymentLink      String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientId String?
+
+  service   Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  serviceId String?
+
+  teamMember   TeamMember? @relation(fields: [teamMemberId], references: [id], onDelete: SetNull)
+  teamMemberId String?
+
+  contractedService   ContractedService? @relation(fields: [contractedServiceId], references: [id], onDelete: SetNull)
+  contractedServiceId String?
+
+  @@index([type, status])
+  @@index([dueDate])
+  @@index([contractedServiceId])
+}
+
+/// Registra que um lançamento recorrente foi apagado de propósito naquele
+/// mês - ensureRecurringTransactions (src/lib/recurrence.ts) nunca recria
+/// uma recurrenceKey listada aqui, mesmo rodando de novo no próximo
+/// carregamento da tela. Sem isso, apagar a mensalidade do mês corrente
+/// era impossível de verdade: o upsert recriava a linha na hora.
+model RecurringTransactionSkip {
+  recurrenceKey String   @id
+  createdAt     DateTime @default(now())
+}
+
+model KanbanBoard {
+  id        String   @id @default(cuid())
+  name      String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientId String?
+
+  columns    KanbanColumn[]
+  importJobs ImportJob[]
+
+  @@index([clientId])
+}
+
+/// Job de importação de demandas/anexos de uma ferramenta externa (Trello,
+/// ClickUp, Notion, Asana) via token pessoal de API - migração pontual, não
+/// sincronização contínua. O token só é usado em memória pra buscar o quadro
+/// de origem uma vez (POST .../start) - nunca é salvo no banco.
+model ImportJob {
+  id              String          @id @default(cuid())
+  platform        ImportPlatform
+  status          ImportJobStatus @default(PENDING)
+  sourceBoardId   String
+  sourceBoardName String
+  totalCards      Int             @default(0)
+  importedCards   Int             @default(0)
+  // Fila (JSON) de cartões já buscados na origem mas ainda não criados no
+  // Kanban - consumida aos poucos por /continue, em lotes. Null quando o job
+  // termina (sucesso ou falha), já que nada fica pendente pra processar.
+  pendingData     String?
+  errorMessage    String?
+  createdAt       DateTime        @default(now())
+  completedAt     DateTime?
+
+  targetBoard   KanbanBoard @relation(fields: [targetBoardId], references: [id], onDelete: Cascade)
+  targetBoardId String
+
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientId String?
+
+  createdBy   User   @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdById String
+
+  @@index([targetBoardId])
+  @@index([clientId])
+}
+
+model KanbanColumn {
+  id        String   @id @default(cuid())
+  name      String
+  color     String?
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  board   KanbanBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  boardId String
+
+  cards                 KanbanCard[]
+  automations           ColumnAutomation[] @relation("TriggerColumn")
+  automationMoveTargets ColumnAutomation[] @relation("MoveToColumn")
+
+  @@index([boardId])
+}
+
+model DemandType {
+  id        String   @id @default(cuid())
+  name      String
+  color     String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  kanbanCards        KanbanCard[]
+  posts              Post[]
+  triggerAutomations ColumnAutomation[] @relation("TriggerDemandType")
+  setAutomations     ColumnAutomation[] @relation("SetDemandType")
+}
+
+model Attachment {
+  id             String         @id @default(cuid())
+  url            String
+  type           AttachmentType
+  name           String?
+  position       Int            @default(0)
+  status         PostStatus     @default(PENDING)
+  feedback       String?
+  reviewedAt     DateTime?
+  reviewedByName String?
+  createdAt      DateTime       @default(now())
+
+  card   KanbanCard? @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardId String?
+
+  post   Post?   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId String?
+
+  @@index([cardId])
+  @@index([postId])
+}
+
+model KanbanCard {
+  id               String         @id @default(cuid())
+  title            String
+  description      String?
+  priority         Priority       @default(MEDIUM)
+  dueDate          DateTime?
+  completedAt      DateTime?
+  archivedAt       DateTime?
+  scheduledNetwork SocialNetwork?
+  scheduledAt      DateTime?
+  publishStatus    PublishStatus?
+  publishError     String?
+  externalPostId   String?
+  publishedAt      DateTime?
+  urgentAlerted    Boolean        @default(false)
+  estimatedHours   Float?
+  position         Int            @default(0)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  column   KanbanColumn @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  columnId String
+
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientId String?
+
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId String?
+
+  assignee   User?   @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  assigneeId String?
+
+  post   Post?   @relation(fields: [postId], references: [id], onDelete: SetNull)
+  postId String?
+
+  demandType   DemandType? @relation(fields: [demandTypeId], references: [id], onDelete: SetNull)
+  demandTypeId String?
+
+  socialAccount   SocialAccount? @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
+  socialAccountId String?
+
+  attachments      Attachment[]
+  comments         Comment[]
+  checklists       Checklist[]
+  automations      ColumnAutomation[]
+  metricSnapshots  PostMetricSnapshot[]
+  timeEntries      TimeEntry[]
+  automationsFired ColumnAutomationFired[]
+
+  @@index([columnId, position])
+  @@index([socialAccountId])
+}
+
+/// Apontamento manual de horas (data + duração + nota) num card do Kanban -
+/// timesheet v1, sem timer ativo de start/stop.
+model TimeEntry {
+  id        String   @id @default(cuid())
+  minutes   Int
+  date      DateTime
+  note      String?
+  /// Se essa hora é faturável ao cliente ou não (reunião interna, retrabalho etc) - default true preserva o histórico já lançado.
+  billable  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  card   KanbanCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardId String
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@index([cardId])
+  @@index([userId, date])
+}
+
+/// Conta de Instagram/Facebook/TikTok conectada de um cliente via OAuth,
+/// usada para publicar de verdade os agendamentos do Kanban.
+model SocialAccount {
+  id                    String              @id @default(cuid())
+  platform              SocialNetwork
+  externalAccountId     String
+  externalPageId        String?
+  metaUserId            String?
+  name                  String
+  accessTokenEnc        String
+  refreshTokenEnc       String? // TikTok exige refresh token (token de acesso dura só 24h); Meta não usa este campo.
+  tokenExpiresAt        DateTime?
+  refreshTokenExpiresAt DateTime? // TikTok: validade do refresh token (365 dias); Meta não usa este campo.
+  status                SocialAccountStatus @default(ACTIVE)
+  lastError             String?
+  connectedAt           DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId String
+
+  connectedBy   User?   @relation(fields: [connectedById], references: [id], onDelete: SetNull)
+  connectedById String?
+
+  scheduledCards  KanbanCard[]
+  metricSnapshots SocialMetricSnapshot[]
+
+  @@unique([clientId, platform])
+  @@index([clientId])
+  @@index([metaUserId])
+}
+
+/// Snapshot diário de métricas de uma conta social (Instagram/Facebook), lido
+/// da Graph API de Insights da Meta. Uma linha por conta por dia (upsert) -
+/// guarda null nos campos que a API não devolver naquele dia em vez de falhar
+/// a sincronização inteira.
+model SocialMetricSnapshot {
+  id                String   @id @default(cuid())
+  date              DateTime
+  followers         Int?
+  mediaCount        Int?
+  reach             Int?
+  impressions       Int?
+  profileViews      Int?
+  engagedAccounts   Int?
+  totalInteractions Int?
+  profileLinkTaps   Int?
+  likes             Int?
+  comments          Int?
+  shares            Int?
+  saves             Int?
+  raw               String?
+  createdAt         DateTime @default(now())
+
+  socialAccount   SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  socialAccountId String
+
+  @@unique([socialAccountId, date])
+  @@index([socialAccountId])
+}
+
+/// Snapshot diário de métricas de um post publicado pelo Orkestrya
+/// (correlacionado via KanbanCard.externalPostId, o id retornado pela Graph
+/// API na publicação). Mesma tolerância a falha por métrica do snapshot de
+/// conta - só cobre posts publicados no Instagram/Facebook via o app.
+model PostMetricSnapshot {
+  id          String   @id @default(cuid())
+  date        DateTime
+  impressions Int?
+  reach       Int?
+  likes       Int?
+  comments    Int?
+  shares      Int?
+  saves       Int?
+  videoViews  Int?
+  raw         String?
+  createdAt   DateTime @default(now())
+
+  kanbanCard   KanbanCard @relation(fields: [kanbanCardId], references: [id], onDelete: Cascade)
+  kanbanCardId String
+
+  @@unique([kanbanCardId, date])
+  @@index([kanbanCardId])
+}
+
+enum DataDeletionStatus {
+  PENDING
+  COMPLETED
+}
+
+/// Registro dos pedidos de exclusão de dados recebidos via callback da Meta
+/// (quando alguém pede a exclusão pelas configurações do Facebook/Instagram),
+/// pra dar suporte à página pública de status exigida pela Meta.
+model MetaDataDeletionRequest {
+  id               String             @id @default(cuid())
+  confirmationCode String             @unique
+  metaUserId       String
+  status           DataDeletionStatus @default(PENDING)
+  accountsRemoved  Int                @default(0)
+  requestedAt      DateTime           @default(now())
+  completedAt      DateTime?
+}
+
+/// Credenciais do app da Meta (ID + chave secreta), configuráveis pelo painel
+/// de Integrações em vez de exigir editar o .env do servidor na mão. Linha
+/// única (id fixo "meta").
+model MetaAppConfig {
+  id           String   @id
+  appId        String?
+  appSecretEnc String?
+  updatedAt    DateTime @updatedAt
+
+  updatedBy   User?   @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById String?
+}
+
+/// Credenciais do app do TikTok (Client Key + Client Secret), mesmo padrão do
+/// MetaAppConfig - configuráveis pelo painel de Integrações. Linha única (id
+/// fixo "tiktok").
+model TikTokAppConfig {
+  id              String   @id
+  clientKey       String?
+  clientSecretEnc String?
+  updatedAt       DateTime @updatedAt
+
+  updatedBy   User?   @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById String?
+}
+
+/// Credenciais do projeto Google Cloud (OAuth Client ID + Secret) usado pra
+/// integração com o YouTube Data API v3, mesmo padrão do TikTokAppConfig.
+/// Linha única (id fixo "youtube").
+model YouTubeAppConfig {
+  id              String   @id
+  clientId        String?
+  clientSecretEnc String?
+  updatedAt       DateTime @updatedAt
+
+  updatedBy   User?   @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById String?
+}
+
+/// Credenciais do app criado no LinkedIn Developer Portal (OAuth Client ID +
+/// Secret), mesmo padrão do TikTokAppConfig/YouTubeAppConfig. Linha única (id
+/// fixo "linkedin").
+model LinkedInAppConfig {
+  id              String   @id
+  clientId        String?
+  clientSecretEnc String?
+  updatedAt       DateTime @updatedAt
+
+  updatedBy   User?   @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById String?
+}
+
+/// Credenciais do "Threads use case" configurado dentro do app da Meta
+/// (App ID + Secret PRÓPRIOS do Threads, diferentes dos usados pelo
+/// Facebook Login/Instagram, mesmo estando no mesmo painel do Meta App
+/// Dashboard). Linha única (id fixo "threads").
+model ThreadsAppConfig {
+  id           String   @id
+  appId        String?
+  appSecretEnc String?
+  updatedAt    DateTime @updatedAt
+
+  updatedBy   User?   @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById String?
+}
+
+/// Credenciais do provedor de IA usado nos power-ups de rascunho automático
+/// (AI_DRAFT_CAPTION). Linha única (id fixo "ai"), mesmo padrão de MetaAppConfig.
+model AiConfig {
+  id        String   @id
+  provider  String   @default("anthropic")
+  apiKeyEnc String?
+  model     String?
+  updatedAt DateTime @updatedAt
+
+  updatedBy   User?   @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById String?
+}
+
+/// Credenciais do provedor de e-mail transacional (Resend). Linha única (id fixo "email").
+model EmailConfig {
+  id          String   @id
+  provider    String   @default("resend")
+  apiKeyEnc   String?
+  fromAddress String?
+  fromName    String?
+  updatedAt   DateTime @updatedAt
+
+  updatedBy   User?   @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById String?
+}
+
+/// Credenciais do gateway de cobrança (Asaas) usado pra gerar PIX/boleto a
+/// partir de um Transaction. Linha única (id fixo "payment").
+model PaymentConfig {
+  id        String   @id
+  provider  String   @default("asaas")
+  apiKeyEnc String?
+  sandbox   Boolean  @default(true)
+  /// Token de autenticação do webhook (configurado no painel do Asaas em
+  /// Integrações → Webhooks, enviado de volta no header asaas-access-token) -
+  /// sem isso, qualquer POST não autenticado marcaria uma cobrança como paga.
+  webhookTokenEnc String?
+  updatedAt DateTime @updatedAt
+
+  updatedBy   User?   @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById String?
+}
+
+/// Configuração do número de WhatsApp Business (Cloud API) da agência - um só
+/// número pra agência inteira, não por cliente. Linha única (id fixo "whatsapp").
+model WhatsAppConfig {
+  id             String   @id
+  phoneNumberId  String?
+  accessTokenEnc String?
+  verifyToken    String?
+  appSecretEnc   String?
+  displayName    String?
+  updatedAt      DateTime @updatedAt
+
+  updatedBy   User?   @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById String?
+}
+
+/// Uma conversa de WhatsApp (por número de telefone do contato), opcionalmente
+/// já ligada a um Client existente.
+model WhatsAppConversation {
+  id            String   @id @default(cuid())
+  phoneNumber   String   @unique
+  contactName   String?
+  lastMessageAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientId String?
+
+  messages WhatsAppMessage[]
+
+  @@index([clientId])
+}
+
+model WhatsAppMessage {
+  id         String                   @id @default(cuid())
+  direction  WhatsAppMessageDirection
+  text       String?
+  mediaUrl   String?
+  externalId String?
+  createdAt  DateTime                 @default(now())
+
+  conversation   WhatsAppConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+
+  sentByUser   User?   @relation(fields: [sentByUserId], references: [id], onDelete: SetNull)
+  sentByUserId String?
+
+  @@index([conversationId, createdAt])
+}
+
+model Folder {
+  id        String     @id @default(cuid())
+  name      String
+  kind      FolderKind
+  position  Int        @default(0)
+  createdAt DateTime   @default(now())
+
+  notes      Note[]
+  checklists Checklist[]
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  folder   Folder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  folderId String?
+
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientId String?
+
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId String?
+
+  author   User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  authorId String?
+
+  @@index([folderId])
+  @@index([clientId])
+  @@index([projectId])
+}
+
+model Checklist {
+  id        String   @id @default(cuid())
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  folder   Folder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  folderId String?
+
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientId String?
+
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId String?
+
+  card   KanbanCard? @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardId String?
+
+  items ChecklistItem[]
+
+  @@index([folderId])
+  @@index([clientId])
+  @@index([projectId])
+  @@index([cardId])
+}
+
+model ChecklistItem {
+  id        String   @id @default(cuid())
+  text      String
+  done      Boolean  @default(false)
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  checklist   Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  checklistId String
+
+  @@index([checklistId, position])
+}
+
+model Comment {
+  id          String   @id @default(cuid())
+  text        String
+  imageUrl    String?
+  isAutomated Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  card   KanbanCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardId String
+
+  author   User?   @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  authorId String?
+
+  mentionedUser   User?   @relation("CommentMention", fields: [mentionedUserId], references: [id], onDelete: SetNull)
+  mentionedUserId String?
+
+  @@index([cardId])
+}
+
+model ColumnAutomation {
+  id                   String            @id @default(cuid())
+  trigger              AutomationTrigger
+  action               AutomationAction
+  /// Só usado por CARD_IDLE (dias parado na coluna) e DUE_DATE_APPROACHING (dias até o prazo).
+  triggerThresholdDays Int?
+  active               Boolean           @default(true)
+  position             Int               @default(0)
+  createdAt            DateTime          @default(now())
+
+  column   KanbanColumn @relation("TriggerColumn", fields: [columnId], references: [id], onDelete: Cascade)
+  columnId String
+
+  card   KanbanCard? @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardId String?
+
+  triggerDemandType   DemandType? @relation("TriggerDemandType", fields: [triggerDemandTypeId], references: [id], onDelete: Cascade)
+  triggerDemandTypeId String?
+
+  assignee   User?   @relation("AutomationAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assigneeId String?
+
+  commentText String?
+
+  mentionUser   User?   @relation("AutomationMention", fields: [mentionUserId], references: [id], onDelete: SetNull)
+  mentionUserId String?
+
+  checklistTitle String?
+  checklistItems String?
+
+  setDemandType   DemandType? @relation("SetDemandType", fields: [setDemandTypeId], references: [id], onDelete: Cascade)
+  setDemandTypeId String?
+
+  moveToColumn   KanbanColumn? @relation("MoveToColumn", fields: [moveToColumnId], references: [id], onDelete: SetNull)
+  moveToColumnId String?
+
+  firedFor ColumnAutomationFired[]
+
+  @@index([columnId])
+  @@index([cardId])
+}
+
+/// Marca que uma automação de gatilho por tempo (CARD_IDLE/DUE_DATE_APPROACHING)
+/// já disparou pra esse card - dispara uma vez só (mesmo espírito do
+/// KanbanCard.urgentAlerted), não fica repetindo comentário/ação a cada
+/// carregamento da tela enquanto a condição continuar valendo.
+model ColumnAutomationFired {
+  id      String   @id @default(cuid())
+  firedAt DateTime @default(now())
+
+  automation   ColumnAutomation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  automationId String
+
+  card   KanbanCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardId String
+
+  @@unique([automationId, cardId])
+}
+
+model CompanySettings {
+  id           String   @id @default(cuid())
+  name         String   @default("Minha Agência")
+  email        String?
+  phone        String?
+  address      String?
+  document     String?
+  /// Chave PIX oficial da agência - aparece no contrato (cláusula de
+  /// investimento) como a chave que recebe os pagamentos.
+  pixKey       String?
+  /// Logo e cor de destaque aplicados na própria UI do sistema (sidebar/tema), não só no PDF de contrato.
+  logoUrl      String?
+  primaryColor String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// Modelo reutilizável de contrato (não pertence a um cliente específico) -
+/// corpo em texto rico (JSON do TipTap) com variáveis {{contratante.x}} etc,
+/// mais marca d'água/cabeçalho/rodapé opcionais pra geração de PDF.
+model ContractTemplate {
+  id           String   @id @default(cuid())
+  name         String
+  bodyJson     String
+  watermarkUrl String?
+  headerUrl    String?
+  footerUrl    String?
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// Modelo reutilizável de conteúdo narrativo de proposta comercial (não
+/// pertence a um cliente específico) - corpo em texto rico (JSON do TipTap)
+/// com variáveis {{contratante.x}} etc, igual ContractTemplate, mas sem marca
+/// d'água (proposta não é documento assinado/impresso). Só usado quando
+/// SalesProposal.kind = FULL.
+model ProposalTemplate {
+  id         String   @id @default(cuid())
+  name       String
+  bodyJson   String
+  headerUrl  String?
+  footerUrl  String?
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  /// Chave do catálogo de modelos prontos (proposalTemplateFactory.ts) que gerou
+  /// este registro, null pra modelo criado manualmente. Usada pro upsert de
+  /// "Gerar modelo pronto" achar o registro certo mesmo se ele for renomeado depois.
+  sourceKind String?
+
+  proposals SalesProposal[]
+}
+
+/// Estrutura de quadro Kanban reutilizável (nome de colunas + cards
+/// iniciais opcionais) - usada tanto na automação de proposta (abre o
+/// quadro do cliente já populado ao assinar o contrato) quanto no botão
+/// manual "Novo quadro a partir de um modelo" em /kanban.
+model BoardTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  columns BoardTemplateColumn[]
+}
+
+model BoardTemplateColumn {
+  id       String  @id @default(cuid())
+  name     String
+  color    String?
+  position Int     @default(0)
+
+  template   BoardTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  templateId String
+
+  cards BoardTemplateCard[]
+
+  @@index([templateId])
+}
+
+model BoardTemplateCard {
+  id       String @id @default(cuid())
+  title    String
+  position Int    @default(0)
+
+  column   BoardTemplateColumn @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  columnId String
+
+  @@index([columnId])
+}
+
+model Post {
+  id            String     @id @default(cuid())
+  title         String
+  caption       String?
+  status        PostStatus @default(PENDING)
+  priority      Priority   @default(MEDIUM)
+  token         String     @unique @default(cuid())
+  feedback      String?
+  reviewedAt    DateTime?
+  scheduledDate DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId String
+
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId String?
+
+  demandType   DemandType? @relation(fields: [demandTypeId], references: [id], onDelete: SetNull)
+  demandTypeId String?
+
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+
+  attachments Attachment[]
+
+  kanbanCards KanbanCard[]
+
+  @@index([clientId])
+  @@index([status])
+}
